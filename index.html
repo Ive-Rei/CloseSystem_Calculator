@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Close System, RP & Buffer Simulator — Mudley Quant Lab</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-badge">CS</div>
+      <div>
+        <h1>Close System, RP &amp; Buffer Simulator</h1>
+        <p class="subtitle">เครื่องคำนวณโซนระบบปิด (Linear &amp; CS2), โหมดบัญชี Cent, ค่า RP และจำลองกราฟ Drawdown</p>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <button id="btnAutoLot" class="btn btn-accent" title="คำนวณ Lot Size สูงสุดที่ปลอดภัยถึงจุด Floor">
+        ⚡ คำนวณ Lot ปลอดภัยสูงสุด
+      </button>
+      <button id="btnExportCsv" class="btn btn-outline">
+        📥 Export ตารางโซน (.CSV)
+      </button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- Left Sidebar: Parameters -->
+    <aside class="panel controls-panel">
+      <div class="panel-header">
+        <h2>⚙️ พารามิเตอร์ระบบ (System Inputs)</h2>
+      </div>
+
+      <div class="form-group">
+        <label for="preset">สินทรัพย์ต้นแบบ (Asset Preset)</label>
+        <select id="preset">
+          <option value="XAUUSD">XAU/USD — ทองคำ (Contract: 100 oz)</option>
+          <option value="EURUSD">EUR/USD — ยูโร/ดอลลาร์ (Contract: 100,000)</option>
+          <option value="USDJPY">USD/JPY — ดอลลาร์/เยน (USD Base)</option>
+          <option value="AUDUSD">AUD/USD — ออสเตรเลีย/ดอลลาร์</option>
+          <option value="BTCUSDT">BTC/USDT — บิทคอยน์ Spot (Contract: 1)</option>
+          <option value="TDEX">TDEX — SET50 ETF (Contract: 100 หุ้น/ไม้)</option>
+          <option value="CUSTOM">Custom — กำหนดค่าเอง</option>
+        </select>
+      </div>
+
+      <!-- Account Mode & Grid Model -->
+      <div class="grid-2">
+        <div class="form-group">
+          <label for="accountMode">ประเภทบัญชี (Account)</label>
+          <select id="accountMode">
+            <option value="STANDARD">Standard (USD)</option>
+            <option value="CENT">Cent (USC: $1 = 100¢)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="gridModel">โมเดลกริด (Grid Model)</label>
+          <select id="gridModel">
+            <option value="LINEAR">Linear Grid (Lot คงที่)</option>
+            <option value="CS2">CS2 Inverse Function</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="cs2Options" class="cs2-box hidden">
+        <div class="grid-2">
+          <div class="form-group" style="margin-bottom:0">
+            <label for="cs2Gamma">ความโค้ง CS2 (γ ≥ 1)</label>
+            <input type="number" id="cs2Gamma" value="1.5" min="1" max="4" step="0.1" />
+          </div>
+          <div class="cs2-note">
+            <span>ยิ่ง γ สูง ยิ่งสะสม Lot ใหญ่ในโซนล่างอัตโนมัติ</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="form-group">
+          <label for="capital">เงินทุนจัดสรร (Capital $)</label>
+          <input type="number" id="capital" value="25000" min="1" step="100" />
+        </div>
+        <div class="form-group">
+          <label for="contractSize">Contract Size (Std)</label>
+          <input type="number" id="contractSize" value="100" min="0.0001" step="any" />
+        </div>
+      </div>
+
+      <div class="grid-3">
+        <div class="form-group">
+          <label for="upperPrice">ขอบบน (Upper)</label>
+          <input type="number" id="upperPrice" value="2700" step="any" />
+        </div>
+        <div class="form-group">
+          <label for="lowerPrice">ขอบล่าง (Lower)</label>
+          <input type="number" id="lowerPrice" value="1800" step="any" />
+        </div>
+        <div class="form-group">
+          <label for="floorPrice">จุด Floor (Worst)</label>
+          <input type="number" id="floorPrice" value="0" min="0" step="any" />
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="form-group">
+          <label for="numZones">จำนวนโซน / กระสุน (N)</label>
+          <input type="number" id="numZones" value="10" min="2" max="200" step="1" />
+        </div>
+        <div class="form-group">
+          <label id="lotSizeLabel" for="lotSize">ขนาดต่อไม้ (Lot Size)</label>
+          <input type="number" id="lotSize" value="0.01" min="0.001" step="0.01" />
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="form-group">
+          <label for="leverage">Account Leverage</label>
+          <select id="leverage">
+            <option value="1">1:1 (Spot / No Leverage)</option>
+            <option value="100">1:100</option>
+            <option value="200">1:200</option>
+            <option value="500" selected>1:500</option>
+            <option value="1000">1:1000</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="stopOutPct">Stop Out Level (%)</label>
+          <input type="number" id="stopOutPct" value="50" min="0" max="100" step="5" />
+        </div>
+      </div>
+
+      <div class="divider"></div>
+      <div class="panel-subheader">💧 จำลอง Cash Flow รายรอบ</div>
+
+      <div class="grid-2">
+        <div class="form-group">
+          <label for="tpDistance">ระยะ TP ต่อรอบ (ราคา)</label>
+          <input type="number" id="tpDistance" value="20" min="0.0001" step="any" />
+        </div>
+        <div class="form-group">
+          <label for="cyclesPerMonth">รอบที่ปิดได้ / เดือน</label>
+          <input type="number" id="cyclesPerMonth" value="15" min="1" step="1" />
+        </div>
+      </div>
+
+      <div class="formula-box">
+        <div class="formula-title">📐 สูตรอ้างอิง Quant &amp; Mudley</div>
+        <code>RP = Capital / Max Drawdown Zone</code>
+        <code>Margin Level = (Equity / Used Margin) × 100</code>
+        <code>CS2 Target(P) = Capital × ((Upper - P)/(Upper - Lower))^γ</code>
+      </div>
+    </aside>
+
+    <!-- Right Main Workspace: KPIs, Charts & Table -->
+    <section class="content-area">
+      <!-- Status Banner -->
+      <div id="statusBanner" class="status-banner status-safe">
+        <span id="statusIcon">🛡️</span>
+        <div>
+          <strong id="statusTitle">FULL CLOSE SYSTEM VERIFIED</strong>
+          <p id="statusDesc">เงินทุนเพียงพอรองรับการลากลงถึงจุด Floor โดยไม่เกิด Stop Out</p>
+        </div>
+      </div>
+
+      <!-- KPI Cards -->
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <span class="kpi-label">ทุนที่ต้องใช้ถึง Floor (Required Buffer)</span>
+          <strong id="kpiRequiredCap" class="kpi-value">$0.00</strong>
+          <span id="kpiCapRatio" class="kpi-sub">ใช้หน้าตัก 0% ของทุน</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Risk Parameter (RP ต่อระยะโซน)</span>
+          <strong id="kpiRP" class="kpi-value">$0.00 / unit</strong>
+          <span id="kpiBulletRP" class="kpi-sub">RP นัดบนสุด: $0.00</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">ระยะห่างโซน (Grid Step ΔP)</span>
+          <strong id="kpiGridStep" class="kpi-value">0.00</strong>
+          <span id="kpiTotalExposure" class="kpi-sub">Total Lot: 0.00</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Margin Level ณ จุด Floor</span>
+          <strong id="kpiMarginLevel" class="kpi-value">0%</strong>
+          <span id="kpiStopOutPrice" class="kpi-sub">Stop Out Price: $0.00</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">กำไรต่อรอบ &amp; Cash Flow / เดือน</span>
+          <strong id="kpiMonthlyCF" class="kpi-value">$0.00 / mo</strong>
+          <span id="kpiTrueAlpha" class="kpi-sub">คืนทุน (True Alpha): 0 เดือน</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Pip Value / มูลค่าต่อ 1 ช่อง</span>
+          <strong id="kpiPipValue" class="kpi-value">$0.00</strong>
+          <span id="kpiUsedMargin" class="kpi-sub">Max Used Margin: $0.00</span>
+        </div>
+      </div>
+
+      <!-- Charts Row -->
+      <div class="charts-grid">
+        <div class="panel chart-panel">
+          <div class="panel-header">
+            <h3>📉 กราฟจำลอง Equity &amp; Floating Drawdown เมื่อราคาร่วงสู่ Floor</h3>
+          </div>
+          <div class="chart-wrap">
+            <canvas id="drawdownChart"></canvas>
+          </div>
+        </div>
+        <div class="panel chart-panel">
+          <div class="panel-header">
+            <h3>🛡️ กราฟความแข็งแกร่งของ Margin Level (%) เทียบเกณฑ์ Stop Out</h3>
+          </div>
+          <div class="chart-wrap">
+            <canvas id="marginChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Zone Ledger Table -->
+      <div class="panel table-panel">
+        <div class="panel-header">
+          <h3>📋 ตารางพิกัดโซนและกระแสเงินสดสะสม (Close System Zone Ledger)</h3>
+          <div style="display:flex; gap:0.5rem; align-items:center;">
+            <span id="modeBadge" class="badge">Standard • Linear</span>
+            <span id="tableSummary" class="badge">10 โซน</span>
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table id="zoneTable">
+            <thead>
+              <tr>
+                <th>โซน</th>
+                <th>ราคาเข้าซื้อ (Entry)</th>
+                <th>ราคาขาย (TP)</th>
+                <th>Lot Size</th>
+                <th>Buffer ถึง Floor</th>
+                <th>Used Margin</th>
+                <th>Floating DD สะสม (ณ จุดนี้)</th>
+                <th>Equity คงเหลือ (ณ จุดนี้)</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
